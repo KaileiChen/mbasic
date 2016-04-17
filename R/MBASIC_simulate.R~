@@ -426,6 +426,6 @@ MBASIC.sim <- function(xi, family = "lognormal", struct = NULL, I, fac, J, S = 2
   if (family != "poisson"){
     return(list(Theta = para.theta$Theta, Y = Y, X = X, fac = fac, W = para.theta$W, Z = para.theta$Z, V = V, delta = para.theta$delta, zeta = para.theta$zeta, prior.mean = prior_mean, prior.sd = prior_sd, stdev = stdev, Mu = prior.Mu, bkng = bkng, snr = snr, non.id = para.theta$non.id))
   } else {
-	return(list(Theta = para.theta$Theta, Y = Y, X = X, fac = fac, W = para.theta$W, Z = para.theta$Z, V = V, delta = para.theta$delta, zeta = para.theta$zeta, prior.mean = prior_mean, prior.sd = prior_sd, stdev = NULL, Mu = prior.Mu, Lambda = prior.Mu*prior.Mu, bkng = bkng, snr = snr, non.id = para.theta$non.id))
+	return(list(Theta = para.theta$Theta, Y = Y, X = X, fac = fac, W = para.theta$W, Z = para.theta$Z, V = V, delta = para.theta$delta, zeta = para.theta$zeta, prior.mean = prior_mean, prior.sd = prior_sd, stdev = NULL, Mu = prior.Mu, Lambda = Lambda, bkng = bkng, snr = snr, non.id = para.theta$non.id))
   }  
 }

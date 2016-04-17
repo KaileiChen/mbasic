@@ -343,6 +343,42 @@ MBASIC.MADBayes.full <- function(Y, Gamma = NULL, fac, lambdaw = NULL, lambda = 
          )
 }
 
+InitializeTheta.MADBayes <- function() {
+  Inherit(c("N", "S", "K", "I", "Y", "Gamma", "designMat", "D", "maxitr", "tol"))
+  Mu <- Sigma <- matrix(0, nrow = N, ncol = S)
+  Theta <- matrix(0, nrow = K, ncol = I)
+  storage.mode(Theta) <- "integer"
+  foldChange <- Y / Gamma[seq(N), ]
+  foldChange[Gamma[seq(N), ] == 0] <- 1
+  avgFoldChange <- crossprod(foldChange, designMat) / rep(apply(designMat, 2, sum), each = I)
+  for(k in seq(K)) {
+    for(s in seq(S, 1)) {
+      Theta[k, rank(avgFoldChange[, k]) <= s / S * I] <- s - 1
+    }
+  }
+  ## DTheta: N by I
+  DTheta <- designMat %*% Theta
+  for(n in seq(N)) {
+    for(s in seq(S)) {
+      Mu[n, s] <- mean(foldChange[n, DTheta[n, ] == s - 1])
+      Sigma[n, s] <- var(foldChange[n, DTheta[n, ] == s - 1])
+    }
+  }
+  Sigma[Sigma <= 0] <- min(Sigma[Sigma > 0])
+  
+  storage.mode(Theta) <- "integer"
+  
+  ## initialize Theta
+  
+  ret <- .Call("madbayes_theta", Theta, Mu, D, Gamma, Y, maxitr, tol, package = "MBASIC")
+
+  Theta <- ret$Theta
+  Mu <- ret$Mu
+  Sigma <- ret$Sigma
+
+  Return(c("Theta", "Mu", "Sigma"))
+
+}
 
 InitializeClusters.MADBayes <- function() {
   Inherit(c("verbose", "I", "initialize", "K", "S", "Theta", "lambda", "lambdaw", "J"))

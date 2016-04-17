@@ -1,4 +1,4 @@
-#' @name MBASIC
+#' @name MBASIC_edit
 #' @title Bayesian clustering model for a state-space matrix.
 #'
 #' @description This function is designed to analyze general state-space models. The data consists of observations over I units under N experiments with K different conditions. There are S states for each experiment and unit.
@@ -48,7 +48,7 @@
 #' dat.sim.fit <- MBASIC(Y = dat.sim$Y, S = 3, fac = rep(1:10, each = 2), J = 3, maxitr = 3, para = NULL, family = "lognormal", method = "MBASIC", zeta = 0.1, tol = 1e-6)
 #' @useDynLib MBASIC
 #' @export
-MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL, para = NULL, family="lognormal", method = "MBASIC", zeta = 0.1, min.count = 0, tol = 1e-10, tol.par = 0.001, out = NULL, verbose = FALSE, statemap = NULL, initial = NULL) {
+MBASIC_edit <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL, para = NULL, family="lognormal", method = "MBASIC", zeta = 0.1, min.count = 0, tol = 1e-10, tol.par = 0.001, out = NULL, verbose = FALSE, statemap = NULL, initial = NULL) {
 
   Mu.init <- Sigma.init <- V.init <- ProbMat.init <- W.init <- Z.init <- b.init <- P.init <- NULL
 
@@ -76,12 +76,12 @@ MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL,
   if(verbose) {
     write.out(out, "Started")
   }
-  if(! method %in% c("SE-HC", "SE-MC", "PE-MC", "MBASIC")) {
+  if(! method %in% c("SE-HC", "SE-MC", "PE-MC", "MBASIC", "SE")) {
     stop("Error: 'method' must be one of 'SE-HC', 'SE-MC', 'PE-MC' or 'MBASIC'.")
   }
 
-  if(! family %in% c("lognormal", "negbin", "binom", "gamma-binom", "scaled-t")) {
-    stop("Error: 'family' must be one of 'lognormal', 'negbin', 'binom', 'gamma-binom', 'scaled-t'.")
+  if(! family %in% c("lognormal", "negbin", "binom", "gamma-binom", "scaled-t", "poisson")) {
+    stop("Error: 'family' must be one of 'lognormal', 'negbin', 'binom', 'gamma-binom', 'scaled-t' , 'poisson'.")
   }
 
   if(is.null(statemap)) {
@@ -91,6 +91,7 @@ MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL,
 
   M <- length(statemap)
   stateMap <- matrix(0, nrow = M, ncol = S)
+#  print("here")
   stateMap[cbind(seq(M), statemap)] <- 1
 
   ## prespecified
@@ -159,7 +160,7 @@ MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL,
   
   ## scale the Gamma matrix if the distribution is not binomial or gamma-binomial
   scaleMat <- matrix(1, nrow = N, ncol = M)
-  if(family %in% c("lognormal", "negbin", "scaled-t")) {
+  if(family %in% c("lognormal", "negbin", "scaled-t", "poisson")) {
     for(m in seq(M)) {
       scaleMat[, m] <- apply(Gamma[, I * (m - 1) + seq(I)], 1, mean)
       Gamma[, I * (m - 1) + seq(I)] <- Gamma[, I * (m - 1) + seq(I)] / scaleMat[, m]
@@ -262,13 +263,15 @@ MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL,
       Z.true <- para$Z
       nonid.true <- para$non.id
       Mu.true <- para$Mu
+	  if (family == "poisson")
+		Mu.true = para$prior.mean
     }, error = function(e) {
       warning("'para' is invalid and reset as NULL.")
     })
   }
 
   if(method != "MBASIC") {
-    ## SE-HC, PE-MC or SE-MC method
+    ## SE-HC, PE-MC or SE-MC method 
     
     ## em step to estimate Theta
     allpar <- c(c(V), c(Mu), c(Sigma), c(Pi))
@@ -316,9 +319,33 @@ MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL,
 
     if(!is.null(para))
       allerr <- sqrt(sum((ProbMat - ProbMat.true) ^ 2) / I / K / S)
+
+
+    if (method == "SE"){
+	return(new("MBASICFit",
+                 Theta = ProbMat,
+                 W = W,
+                 V = V,
+
+      		 lik = totallik,
+		 alllik = alllik,
+
+                 Mu = Mu / scaleMat,
+                 Sigma = Sigma,
+
+                 converged = conv,
+#                 Theta.err = allerr,
+
+#                 Mu.err = Mu.err,
+                 Iter = Iter
+                 )
+             )
+    }
     
     if(method != "PE-MC") {
-      ret <- MBASIC.state(Theta, J=J, zeta = zeta, struct = struct, method = method, maxitr = maxitr, tol = tol, tol.par = tol.par, para = para, out = out, W.init = W.init, Z.init = Z.init, P.init = P.init, b.init = b.init)
+      ret <- MBASIC.state_edit(Theta, J=J, zeta = zeta, struct = struct, method = method, maxitr = maxitr, tol = tol, tol.par = tol.par, para = para, out = out, W.init = W.init, Z.init = Z.init, P.init = P.init, b.init = b.init)
+      
+      print("MState finished")
       
       conv <- (conv & ret@converged)
       
@@ -326,9 +353,23 @@ MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL,
       ## Pi is different from Z. Z is the posterior probability.
 
       Mu.err <- numeric(0)
-      if(prod(dim(Mu) == dim(Mu.true)) == 1) {
-        Mu.err <- sqrt(mean((Mu - Mu.true) ^ 2))
-      }
+      if (exists("Mu.true")){
+      	if(prod(dim(Mu) == dim(Mu.true)) == 1) {
+        	Mu.err <- sqrt(mean((Mu - Mu.true) ^ 2))
+      	}
+   	}
+   lik = ret@lik
+
+   if (method == "SE-MC") {
+  	alllik = ret@alllik
+	maxlik = lik
+	Iter = ret@Iter
+    aic = - 2 * tail(maxlik, 1) + 2 * numpar
+	bic = - 2 * tail(maxlik, 1) + log(N * I) * numpar
+	aicc = -2 * tail(maxlik, 1) + 2 * numpar + 2 * numpar * (numpar + 1) / (N * I - numpar - 1)
+   } else {
+	Iter = 0
+   }
 
       write.out(out, paste("mis-class rate ", ret@MisClassRate))
       write.out(out, paste("Error for W ",  round(ret@W.err, 3)))
@@ -340,15 +381,21 @@ MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL,
       rownames(ProbMat) <- rownames(W) <- rep(facNames, S)
       rownames(Mu) <- rownames(Sigma) <- rownames(V) <- facNames[fac]
 
-      return(new("MBASICFit",
+      if (method == "SE-MC") {
+        return(new("MBASICFit",
                  Theta = ProbMat,
                  W = W,
                  Z = ret@Z,
                  V = V,
                  b = ret@b,
                  clustProb = ret@clustProb,
-                 lik = ret@lik,
-                 alllik = ret@alllik,
+	         
+		 aic = aic,
+	         bic = bic,
+		 aicc = aicc,
+
+      		 lik = lik,
+		 alllik = alllik,
                  zeta = ret@zeta,
                  Mu = Mu / scaleMat,
                  Sigma = Sigma,
@@ -360,9 +407,35 @@ MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL,
                  W.err = ret@W.err,
                  MisClassRate = ret@MisClassRate,
                  Mu.err = Mu.err,
-                 Iter = ret@Iter
+                 Iter = Iter
                  )
              )
+     } else {
+	return(new("MBASICFit",
+                 Theta = ProbMat,
+                 W = W,
+                 Z = ret@Z,
+                 V = V,
+                 b = ret@b,
+                 clustProb = ret@clustProb,
+
+      		 lik = lik,
+		 alllik = alllik,
+                 zeta = ret@zeta,
+                 Mu = Mu / scaleMat,
+                 Sigma = Sigma,
+                 probz = ret@probz,
+                 P = ret@P,
+                 converged = conv,
+                 Theta.err = allerr,
+                 ARI = ret@ARI,
+                 W.err = ret@W.err,
+                 MisClassRate = ret@MisClassRate,
+                 Mu.err = Mu.err,
+                 Iter = Iter
+                 )
+             )
+      }
     }
   }
 
@@ -404,7 +477,10 @@ MBASIC <- function(Y, Gamma = NULL, S, fac, J=NULL, maxitr = 100, struct = NULL,
     if(outitr == 1 | method == "MBASIC") {
       ## only compute the PDF once if the method is PE-MC
       PDF <- matrix(0, nrow = N * M, ncol = I)
-      for(m in seq_len(M)) {
+	  m = 1
+	  Gamma.m <- Gamma[, (m - 1) * I + seq(I)]
+      PDF[seq(N) + (m - 1) * N, ] <- logdensity(Y, Mu[, m], Sigma[, m], Gamma.m, family, min.count[, m], inflated.prop)
+      for(m in 2:M) {
         Gamma.m <- Gamma[, (m - 1) * I + seq(I)]
         PDF[seq(N) + (m - 1) * N, ] <- logdensity(Y, Mu[, m], Sigma[, m], Gamma.m, family, min.count[, m])
       }
@@ -535,7 +611,11 @@ InitStates <- function() {
   F1 <- matrix(0, nrow = K * S, ncol = I)
   totalF.full <- matrix(0, nrow = N, ncol = I)
   F1.full <- matrix(0, nrow = N * M, ncol = I)
-  for(m in seq(M)) {
+  m = 1
+  Gamma.m <- Gamma[, I * (m - 1) + seq(I)]
+  idx <- (m - 1) * N + seq_len(N)
+  F1.full[idx,] <- logdensity(Y, Mu[, m], Sigma[, m], Gamma.m, family, min.count[, m], inflated.prop)
+  for(m in 2:M) {
     Gamma.m <- Gamma[, I * (m - 1) + seq(I)]
     idx <- (m - 1) * N + seq_len(N)
     F1.full[idx,] <- logdensity(Y, Mu[, m], Sigma[, m], Gamma.m, family, min.count[, m])
@@ -574,7 +654,7 @@ InitStates <- function() {
 InitDist <- function() {
   Inherit(c("M", "Y", "family", "Mu", "Sigma", "Gamma", "min.count"))
   Gamma.m <- Gamma[, seq(ncol(Y))]
-  
+  inflated.prop = NULL
   for(m in seq(M)) {
     m3 <- NULL
     thr <- min.count[, m]
@@ -587,6 +667,18 @@ InitDist <- function() {
       ## Y.sec <- Y.sec - thr
       Gamma.sec <- c(Gamma * Gamma)[c(Y - thr) < quantile(c(Y - thr), m / M) & c(Y - thr) > quantile(c(Y - thr), (m - 1) / M)]
       m3 <- mean(Gamma.sec)
+    } else if(family  == "poisson") {
+      Y.sec <- c(Y)[c(Y) <= quantile(c(Y), m / M) & c(Y) >= quantile(c(Y), (m - 1) / M)]
+      Y.sec[Y.sec < 0] <- 0
+      ## Y.sec <- Y.sec - thr
+      Gamma.sec <- c(Gamma * Gamma)[c(Y) <= quantile(c(Y), m / M) & c(Y) >= quantile(c(Y), (m - 1) / M)]
+      m3 <- mean(Gamma.sec)
+		if ( m == 1){
+			p0 = apply(Y==0, 1, sum) / length(Y.sec)
+			p1 = apply(Y==1, 1, sum) / length(Y.sec)
+		}
+	  inflated.prop = cbind(p0, p1)	
+			
     } else if(family == "scaled-t") {
       Y.sec <- abs(Y)
       Y.sec <- c(Y.sec)[c(Y.sec) < quantile(c(Y.sec), m / M) & c(Y.sec) > quantile(c(Y.sec), (m - 1) / M)]
@@ -604,10 +696,10 @@ InitDist <- function() {
     }
     m1 <- mean(Y.sec)
     m2 <- var(Y.sec)
-      
+    
     MomentEstimate()
   }
-  Return(c("Mu", "Sigma"))
+  Return(c("Mu", "Sigma", "inflated.prop"))
 }
 
 UpdateDist <- function() {
@@ -627,6 +719,11 @@ UpdateDist <- function() {
       m1 <- apply((Y - thr) * ProbMat.full[idx, ], 1, sum) / apply(Gamma.m * ProbMat.full[idx, ], 1, sum)
       m2 <- apply((Y - thr) * (Y - thr) * ProbMat.full[idx, ], 1, sum) / apply(ProbMat.full[idx, ], 1, sum)
       m3 <- apply(Gamma.m * Gamma.m * ProbMat.full[idx, ], 1, sum) / apply(ProbMat.full[idx, ], 1, sum)
+    } else if(family == "poisson"){
+      ## zero inflated poisson family
+      m1 <- apply(Y * ProbMat.full[idx, ], 1, sum) / apply(Gamma.m * ProbMat.full[idx, ], 1, sum)
+      m2 <- apply(Y * Y * ProbMat.full[idx, ], 1, sum) / apply(ProbMat.full[idx, ], 1, sum)
+      m3 <- apply(Y * Y * Y * ProbMat.full[idx, ], 1, sum) / apply(ProbMat.full[idx, ], 1, sum)
     } else if(family == "scaled-t"){
       ## scaled-t family
       m1 <- apply(abs(Y / Gamma.m) * ProbMat.full[idx, ], 1, sum) / apply(ProbMat.full[idx, ], 1, sum)
@@ -652,16 +749,20 @@ UpdateDist <- function() {
   Mu <- Mu - min.count
   Sigma <- matrix(Sigma[cbind(rep(seq_len(N), each = M), c(od))], ncol = M, byrow = TRUE)
 
-  Return(c("Mu", "Sigma"))
+  Return(c("Mu", "Sigma", "inflated.prop"))
 }
 
 UpdateStates <- function() {
-  Inherit(c("K", "S", "I", "M", "N", "Y", "Gamma", "Mu", "Sigma", "family", "V", "unitMap", "designMap", "stateMap", "Pi", "statemap", "out", "verbose", "min.count"))
+  Inherit(c("K", "S", "I", "M", "N", "Y", "Gamma", "Mu", "Sigma", "family", "V", "unitMap", "designMap", "stateMap", "Pi", "statemap", "out", "verbose", "min.count", "inflated.prop"))
   F1  <- matrix(0, nrow = K * S, ncol = I)
   F1.full <- matrix(0, nrow = N * M, ncol = I)
 
   ## compute F1
   ## recompute replicate density
+	m = 1
+  idx <- (m - 1) * N + seq_len(N)
+    Gamma.m <- Gamma[, seq(I) + I * (m - 1)]
+    F1.full[idx, ] <- exp(logdensity(Y, Mu[, m], Sigma[, m], Gamma.m, family, min.count[, m], inflated.prop)) * V[, m]
   for(m in seq(M)) {
     idx <- (m - 1) * N + seq_len(N)
     Gamma.m <- Gamma[, seq(I) + I * (m - 1)]
@@ -733,8 +834,6 @@ PrintUpdate <- function() {
   W.f <- matrix(0, nrow = K * S, ncol = J)
   for(s in seq_len(S))
     W.f[s + S * seq(0, K - 1),] <- W[seq_len(K) + K * (s - 1),]
-
-# browser()
   
   mc <- matchCluster(W.f, W.true, Zcond, Z.true, b.prob, nonid.true)
   
@@ -742,8 +841,10 @@ PrintUpdate <- function() {
   W.err <- c(W.err, mc$W.err)
   allari <- c(allari, mc$ari)
   Mu.err <- numeric(0)
-  if(prod(dim(Mu) == dim(Mu.true)) == 1) {
-    Mu.err <- sqrt(mean((Mu - Mu.true) ^ 2))
+  if (exists("Mu.true")){
+    if(prod(dim(Mu) == dim(Mu.true)) == 1) {
+      Mu.err <- sqrt(mean((Mu - Mu.true) ^ 2))
+    }
   }
   if(verbose) {
     write.out(out, paste("mis-class rate ", mc$mcr))
@@ -775,7 +876,7 @@ Return <- function(vnames = NULL) {
   }
 }
 
-logdensity <- function(y, mu, sigma, gamma, family, thr) {
+logdensity <- function(y, mu, sigma, gamma, family, thr, inflated.prop = NULL) {
   if(family == "lognormal") {
     y <- log(y + 1)
     return(-(y - mu * gamma) ^ 2 / sigma / 2 - log(sigma) / 2 - log(2 * pi) / 2 )
@@ -783,6 +884,11 @@ logdensity <- function(y, mu, sigma, gamma, family, thr) {
     return(dt(y / mu / gamma, df = sigma, log = TRUE) - log(mu * gamma))
   } else if(family == "negbin") {
     return(dnbinom(y - thr, mu = mu * gamma, size = sigma, log = TRUE))
+  } else if(family == "poisson") {
+	ans = dpois(y, mu * gamma, log = TRUE)
+    if (!is.null(inflated.prop))
+		ans[y == 1 | y == 0] <- inflated.prop[,1] * (y == 0) + inflated.prop[,2] * (y == 1) + (1 - inflated.prop[,1] - inflated.prop[,2]) * ans[y == 1 | y == 0]
+	return(ans)
   } else if(family == "gamma-binom") {
       a <- mu / (1 - mu) * sigma
       b <- sigma
@@ -797,6 +903,7 @@ logdensity <- function(y, mu, sigma, gamma, family, thr) {
 
 MomentEstimate <- function() {
   Inherit(c("m1", "m2", "m3", "Mu", "Sigma", "family", "m", "thr"))
+  inflated.prop <- NULL
   if(family == "lognormal") {
     Mu[, m] <- m1
     m2[m2 < 0.01] <- 0.01
@@ -837,6 +944,27 @@ MomentEstimate <- function() {
     Sigma[, m] <- sapply(m1 * m1 / (m2 + m1 * m1), solve)
     ## scale
     Mu[, m] <- sqrt((m2 + m1 * m1) * (Sigma[, m] - 2) / Sigma[, m])
+  } else if(family == "poisson") {
+    if (m == 1){
+      m1[m1 < 0.001] <- 0.001
+   	  m2[m2 < 0] <- 100
+	  m3[m3 < 0.001] <- 0.001
+      temp <- (m3-m2) / (m2-m1) - 2
+	  temp[temp < 0] <- 1
+	  Mu[,m] <- temp
+      pstar <- (m2-m1) / (temp*temp)
+	  pstar <- pmin(pstar, 0.99)
+	  pstar <- pmax(pstar, 0.4)
+	  p1 <- m1 - pstar*temp
+	  p1 <- pmin(p1, 0.8)
+	  p1 <- pmax(p1, 0.01)
+	  inflated.prop <- cbind(1-p1-pstar, p1)
+      Sigma[, m] <- 0
+	} else {
+		m1[m1 < 0.001] <- 0.001
+    	Mu[, m] <- m1
+		Sigma[, m] <- 0
+	}
   } else if(family == "negbin") {
     m1[m1 < 0.001] <- 0.001
     Mu[, m] <- m1
@@ -856,7 +984,7 @@ MomentEstimate <- function() {
     Mu[, m] <- m1
     Sigma[, m] <- 0
   }
-  Return(c("Mu", "Sigma"))
+  Return(c("Mu", "Sigma", "inflated.prop"))
 }
 
 assignBest <- function(varnames) {
@@ -899,7 +1027,7 @@ InitWZb <- function() {
 
 }
 
-#' @name MBASIC.full
+#' @name MBASIC.full_edit
 #' @title Simultaneously fitting MBASIC model for different numbers of clusters.
 #' @description Simultaneously fitting MBASIC model for different numbers of clusters.
 #' @param struct A list of K by J matrix indicating the structures of each cluster. Default: NULL.
@@ -924,7 +1052,7 @@ InitWZb <- function() {
 #' @useDynLib MBASIC
 #' @import foreach
 #' @export
-MBASIC.full <- function(J=NULL, struct = NULL, out = NULL, ncores = 1, ...) {
+MBASIC.full_edit <- function(J=NULL, struct = NULL, out = NULL, ncores = 1, ...) {
   t0 <- Sys.time()
   allJs <- J
   allstructs <- struct
@@ -949,17 +1077,28 @@ MBASIC.full <- function(J=NULL, struct = NULL, out = NULL, ncores = 1, ...) {
     if(!is.null(out)) {
       out <- paste(out, "model", i, ".txt", sep = "")
     }
-    MBASIC(J = J, struct = struct, out = out, ...)
+    MBASIC_edit(J = J, struct = struct, out = out, ...)
   }
 
   endParallel()
   
-  bestBIC <- Inf
-  bestFit <- NULL
-  for(fit in allfits) {
-    if(fit@bic < bestBIC) {
-      bestBIC <- fit@bic
-      bestFit <- fit
+  if (method != "SE-HC"){
+    bestBIC <- Inf
+    bestFit <- NULL
+    for(fit in allfits) {
+      if(fit@bic < bestBIC) {
+        bestBIC <- fit@bic
+        bestFit <- fit
+      }
+    }
+  } else {
+    bestSil <- -1
+    bestFit <- NULL
+    for(fit in allfits) {
+      if(fit@lik > bestSil) {
+        bestSil <- fit@lik
+        bestFit <- fit
+      }
     }
   }
   return(list(allFits = allfits, BestFit = bestFit,

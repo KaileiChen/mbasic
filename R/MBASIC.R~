@@ -734,7 +734,7 @@ PrintUpdate <- function() {
   for(s in seq_len(S))
     W.f[s + S * seq(0, K - 1),] <- W[seq_len(K) + K * (s - 1),]
 
-# browser()
+  browser()
   
   mc <- matchCluster(W.f, W.true, Zcond, Z.true, b.prob, nonid.true)
   

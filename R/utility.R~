@@ -140,11 +140,11 @@ group2mat <- function(x) {
 #' @importFrom mclust adjustedRandIndex
 matchCluster <- function(W, W.true, predZ, Z.true, b.prob, non.id) {
 
-#  if (nrow(W) != nrow(W.true)){
-#	print("wrong dimension!")
-#	print(dim(W))
-#	print(dim(W.true))
-#  }
+  if (nrow(W) != nrow(W.true)){
+	print("wrong dimension!")
+	print(dim(W))
+	print(dim(W.true))
+  }
 
   if(is.null(b.prob)) {
     b.prob <- rep(0, nrow(predZ))
